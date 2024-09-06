@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import EventSource
 
 @Suite
@@ -13,7 +14,7 @@ struct EventParserTests {
             parser = EventParser(handler: handler, initialEventId: "", initialRetry: 5.0)
             await #expect(parser.reset() == 5.0)
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -25,7 +26,7 @@ struct EventParserTests {
             await #expect(parser.reset() == 7.0)
             await #expect(parser.getLastEventId() == "")
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -37,7 +38,7 @@ struct EventParserTests {
             await #expect(parser.reset() == 7.0)
             await #expect(parser.getLastEventId() == "")
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -48,7 +49,7 @@ struct EventParserTests {
             await parser.parse(line: "retry: 7000L")
             await #expect(parser.reset() == 1.0)
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -59,7 +60,7 @@ struct EventParserTests {
             await parser.parse(line: "retry")
             await #expect(parser.reset() == 1.0)
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -70,7 +71,7 @@ struct EventParserTests {
             await parser.parse(line: "retry: 10000000000000000000000000")
             await #expect(parser.reset() == 1.0)
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -82,7 +83,7 @@ struct EventParserTests {
             await #expect(parser.reset() == 7.0)
             await #expect(parser.reset() == 7.0)
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -99,10 +100,8 @@ struct EventParserTests {
             await parser.parse(line: "none: 123")
             await parser.parse(line: "")
             await #expect(parser.reset() == 7.0)
-            _ = await handler.maybeEvent()
-            _ = await handler.maybeEvent()
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events == [.comment("123"), .message("123", .init(data: "123", lastEventId: "123"))])
         }
     }
 
@@ -112,22 +111,16 @@ struct EventParserTests {
         func emptyComment() async {
             let handler = MockHandler()
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
-            
             await parser.parse(line: ":")
-            await #expect(handler.maybeEvent() == .comment(""))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .comment(""))
         }
         
         @Test
         func commentBody() async {
             let handler = MockHandler()
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
-            
             await parser.parse(line: ": comment")
-            await #expect(handler.maybeEvent() == .comment(" comment"))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .comment(" comment"))
         }
         
         @Test
@@ -136,9 +129,7 @@ struct EventParserTests {
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
             
             await parser.parse(line: ":comment:line")
-            await #expect(handler.maybeEvent() == .comment("comment:line"))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .comment("comment:line"))
         }
     }
     
@@ -155,11 +146,10 @@ struct EventParserTests {
             await parser.parse(line: "")
             await parser.parse(line: "data: ")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "", lastEventId: "")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "", lastEventId: "")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.count == 3)
+            await #expect(handler.events[safe: 0] == .message("message", MessageEvent(data: "", lastEventId: "")))
+            await #expect(handler.events[safe: 1] == .message("message", MessageEvent(data: "", lastEventId: "")))
+            await #expect(handler.events[safe: 2] == .message("message", MessageEvent(data: "", lastEventId: "")))
         }
         
         @Test
@@ -170,7 +160,7 @@ struct EventParserTests {
             await parser.parse(line: "data ")
             await parser.parse(line: "")
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.isEmpty)
         }
         
         @Test
@@ -181,9 +171,8 @@ struct EventParserTests {
             await parser.parse(line: "data:")
             await parser.parse(line: "data:")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "\n", lastEventId: "")))
             
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "\n", lastEventId: "")))
         }
         
         @Test
@@ -193,9 +182,7 @@ struct EventParserTests {
             
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "hello", lastEventId: "")))
         }
         
         @Test
@@ -206,9 +193,7 @@ struct EventParserTests {
             await parser.parse(line: "data: data1")
             await parser.parse(line: "data: ")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "data1\n", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "data1\n", lastEventId: "")))
         }
         
         @Test
@@ -219,9 +204,7 @@ struct EventParserTests {
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "hello", lastEventId: "")))
         }
         
         @Test
@@ -230,9 +213,7 @@ struct EventParserTests {
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
             await parser.parse(line: "data:  {\"foo\": \"bar baz\"}")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: " {\"foo\": \"bar baz\"}", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: " {\"foo\": \"bar baz\"}", lastEventId: "")))
         }
         
         @Test
@@ -241,9 +222,7 @@ struct EventParserTests {
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
             await parser.parse(line: "data:\t{\"foo\": \"bar baz\"}")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "\t{\"foo\": \"bar baz\"}", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "\t{\"foo\": \"bar baz\"}", lastEventId: "")))
         }
         
         @Test
@@ -253,9 +232,7 @@ struct EventParserTests {
             
             await parser.parse(line: "data:{\"foo\": \"bar baz\"}")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "{\"foo\": \"bar baz\"}", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "{\"foo\": \"bar baz\"}", lastEventId: "")))
         }
         
         @Test
@@ -266,9 +243,7 @@ struct EventParserTests {
             await parser.parse(line: "data: data1")
             await parser.parse(line: "data: data2")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "data1\ndata2", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "data1\ndata2", lastEventId: "")))
         }
     }
 
@@ -282,9 +257,7 @@ struct EventParserTests {
             await parser.parse(line: "event: customEvent")
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
         }
 
         @Test
@@ -295,9 +268,7 @@ struct EventParserTests {
             await parser.parse(line: "event:customEvent")
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
         }
 
         @Test
@@ -308,9 +279,7 @@ struct EventParserTests {
             await parser.parse(line: "data: hello")
             await parser.parse(line: "event: customEvent")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("customEvent", MessageEvent(data: "hello", lastEventId: "")))
         }
 
         @Test
@@ -324,11 +293,9 @@ struct EventParserTests {
                 await parser.parse(line: "")
             }
             
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "foo", lastEventId: "")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "foo", lastEventId: "")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "foo", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events[safe: 0] == .message("message", MessageEvent(data: "foo", lastEventId: "")))
+            await #expect(handler.events[safe: 1] == .message("message", MessageEvent(data: "foo", lastEventId: "")))
+            await #expect(handler.events[safe: 2] == .message("message", MessageEvent(data: "foo", lastEventId: "")))
         }
 
         @Test
@@ -340,9 +307,7 @@ struct EventParserTests {
             await parser.parse(line: "")
             await parser.parse(line: "data: foo")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "foo", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "foo", lastEventId: "")))
         }
 
         @Test
@@ -355,10 +320,8 @@ struct EventParserTests {
             await parser.parse(line: "")
             await parser.parse(line: "data: bar")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("customEvent", MessageEvent(data: "foo", lastEventId: "")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "bar", lastEventId: "")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events[safe: 0] == .message("customEvent", MessageEvent(data: "foo", lastEventId: "")))
+            await #expect(handler.events[safe: 1] == .message("message", MessageEvent(data: "bar", lastEventId: "")))
         }
     }
 
@@ -366,15 +329,15 @@ struct EventParserTests {
     struct LastEventIdTests {
         @Test
         func lastEventIdNotReturnedUntilDispatch() async {
+            UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
             let handler = MockHandler()
             let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
             
             await #expect(parser.getLastEventId() == "")
             await parser.parse(line: "id: 1")
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == nil)
             await #expect(parser.getLastEventId() == "")
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == nil)
         }
         
         @Test
@@ -384,10 +347,9 @@ struct EventParserTests {
             
             await parser.parse(line: "id: 1")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == nil)
             await #expect(parser.getLastEventId() == "1")
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == nil)
         }
         
         @Test
@@ -398,9 +360,7 @@ struct EventParserTests {
             await parser.parse(line: "data: hello")
             await parser.parse(line: "id: 1")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "1")))
-            
-            await #expect(handler.maybeEvent() == nil)
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "hello", lastEventId: "1")))
         }
         
         @Test
@@ -413,11 +373,9 @@ struct EventParserTests {
             await parser.parse(line: "")
             await parser.parse(line: "data: world")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "reused")))
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "world", lastEventId: "reused")))
+            await #expect(handler.events[safe: 0] == .message("message", MessageEvent(data: "hello", lastEventId: "reused")))
+            await #expect(handler.events[safe: 1] == .message("message", MessageEvent(data: "world", lastEventId: "reused")))
             await #expect(parser.getLastEventId() == "reused")
-            
-            await #expect(handler.maybeEvent() == nil)
         }
         
         @Test
@@ -430,10 +388,8 @@ struct EventParserTests {
             await parser.parse(line: "data")
             await #expect(parser.getLastEventId() == "")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "", lastEventId: "def")))
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "", lastEventId: "def")))
             await #expect(parser.getLastEventId() == "def")
-            
-            await #expect(handler.maybeEvent() == nil)
         }
         
         @Test
@@ -445,10 +401,8 @@ struct EventParserTests {
             await parser.parse(line: "id: abc\u{0000}def")
             await parser.parse(line: "data")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "", lastEventId: "reused")))
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "", lastEventId: "reused")))
             await #expect(parser.getLastEventId() == "reused")
-            
-            await #expect(handler.maybeEvent() == nil)
         }
         
         @Test
@@ -460,10 +414,8 @@ struct EventParserTests {
             _ = await parser.reset()
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "")))
+            await #expect(handler.events.first == .message("message", MessageEvent(data: "hello", lastEventId: "")))
             await #expect(parser.getLastEventId() == "")
-            
-            await #expect(handler.maybeEvent() == nil)
         }
         
         @Test
@@ -476,10 +428,8 @@ struct EventParserTests {
             _ = await parser.reset()
             await parser.parse(line: "data: hello")
             await parser.parse(line: "")
-            await #expect(handler.maybeEvent() == .message("message", MessageEvent(data: "hello", lastEventId: "1")))
+            await #expect(handler.events[safe: 0] == .message("message", MessageEvent(data: "hello", lastEventId: "1")))
             await #expect(parser.getLastEventId() == "1")
-            
-            await #expect(handler.maybeEvent() == nil)
         }
     }
     
@@ -491,9 +441,7 @@ struct EventParserTests {
         await parser.parse(line: "")
         await parser.parse(line: "")
         await parser.parse(line: "")
-        await #expect(handler.maybeEvent() == nil)
-        
-        await #expect(handler.maybeEvent() == nil)
+        await #expect(handler.events.isEmpty)
     }
 
     @Test
@@ -502,9 +450,7 @@ struct EventParserTests {
         let parser = EventParser(handler: handler, initialEventId: "", initialRetry: 1.0)
         
         await parser.parse(line: "invalid: bar")
-        await #expect(handler.maybeEvent() == nil)
-        
-        await #expect(handler.maybeEvent() == nil)
+        await #expect(handler.events.isEmpty)
     }
 
     @Test
@@ -516,9 +462,7 @@ struct EventParserTests {
         await parser.parse(line: "invalid: bar")
         await parser.parse(line: "event: msg")
         await parser.parse(line: "")
-        await #expect(handler.maybeEvent() == .message("msg", MessageEvent(data: "foo", lastEventId: "")))
-        
-        await #expect(handler.maybeEvent() == nil)
+        await #expect(handler.events.first == .message("msg", MessageEvent(data: "foo", lastEventId: "")))
     }
 
     @Test
@@ -530,9 +474,7 @@ struct EventParserTests {
         await parser.parse(line: ":bar")
         await parser.parse(line: "event: msg")
         await parser.parse(line: "")
-        await #expect(handler.maybeEvent() == .comment("bar"))
-        await #expect(handler.maybeEvent() == .message("msg", MessageEvent(data: "foo", lastEventId: "")))
-        
-        await #expect(handler.maybeEvent() == nil)
+        await #expect(handler.events.first == .comment("bar"))
+        await #expect(handler.events[safe: 1] == .message("msg", MessageEvent(data: "foo", lastEventId: "")))
     }
 }

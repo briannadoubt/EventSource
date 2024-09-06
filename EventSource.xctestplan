@@ -1,0 +1,27 @@
+{
+  "configurations" : [
+    {
+      "id" : "B29F4395-7928-432A-B1A8-746E23108DE0",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "skippedTests" : [
+        "EventSourceTests\/dispatchError()"
+      ],
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "EventSourceTests",
+        "name" : "EventSourceTests"
+      }
+    }
+  ],
+  "version" : 1
+}

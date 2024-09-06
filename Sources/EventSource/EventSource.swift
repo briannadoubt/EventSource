@@ -1,11 +1,77 @@
 import Foundation
 import os
 
+extension UserDefaults {
+    public static var eventSource: UserDefaults {
+        UserDefaults(suiteName: "com.briannadoubt.event-source") ?? .standard
+    }
+}
+
+protocol DataSession: Sendable {
+    func data(
+        for request: URLRequest,
+        delegate: (any URLSessionTaskDelegate)?
+    ) async throws -> (Data, URLResponse)
+    
+    func dataTask(
+        with request: URLRequest,
+        completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void
+    ) -> DataTask
+    
+    func invalidateAndCancel()
+    
+    var configuration: URLSessionConfiguration { get }
+    
+    init(configuration: URLSessionConfiguration, delegate: (any URLSessionDelegate)?, delegateQueue queue: OperationQueue?)
+}
+
+public protocol DataTask: AnyObject {
+    func resume()
+    func cancel()
+}
+
+extension URLSessionDataTask: DataTask {}
+
+extension DataSession {
+    /// Convenience method to load data using a URLRequest, creates and resumes a URLSessionDataTask internally.
+    ///
+    /// - Parameter request: The URLRequest for which to load data.
+    /// - Parameter delegate: Task-specific delegate. Defaults to `nil`.
+    /// - Returns: Data and response.
+    public func data(
+        for request: URLRequest,
+        delegate: (any URLSessionTaskDelegate)? = nil
+    ) async throws -> (Data, URLResponse) {
+        try await data(for: request, delegate: delegate)
+    }
+    
+    func dataTask(
+        with request: URLRequest,
+        completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void = { _, _, _ in }
+    ) -> DataTask {
+        dataTask(with: request, completionHandler: completionHandler)
+    }
+}
+
+extension URLSession: DataSession {
+    public func dataTask(
+        with request: URLRequest,
+        completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void
+    ) -> any DataTask {
+        dataTask(
+            with: request,
+            completionHandler: completionHandler
+        ) as URLSessionDataTask
+    }
+}
+
 public actor EventSource: NSObject {
-    static let logger: Logger = Logger(
-        subsystem: "EventSource",
-        category: "EventSource"
-    )
+    static var logger: Logger {
+        Logger(
+            subsystem: "EventSource",
+            category: "EventSource"
+        )
+    }
     
     public let config: Config
     
@@ -13,16 +79,17 @@ public actor EventSource: NSObject {
     func set(readyState: ReadyState) {
         self.readyState = readyState
     }
-    private var urlSession: URLSession?
+    var urlSession: (any DataSession)?
     let utf8LineParser: UTF8LineParser = UTF8LineParser()
     let eventParser: EventParser
     let reconnectionTimer: ReconnectionTimer
-    private var sessionTask: URLSessionDataTask?
+    var sessionTask: DataTask?
     
-    private var delegate: EventSourceDelegate?
+    var delegate: EventSourceDelegate?
     
-    func createSession() -> URLSession {
-        URLSession(
+    let sessionType: any DataSession.Type
+    func createSession<Session: DataSession>(as: Session.Type) -> any DataSession {
+        Session.init(
             configuration: config.urlSessionConfiguration,
             delegate: delegate,
             delegateQueue: nil
@@ -30,7 +97,12 @@ public actor EventSource: NSObject {
     }
 
     public init(config: Config) {
+        self.init(config: config, sessionType: URLSession.self)
+    }
+    
+    init(config: Config, sessionType: any DataSession.Type) {
         self.config = config
+        self.sessionType = sessionType
         self.eventParser = EventParser(
             handler: config.handler,
             initialEventId: config.lastEventId,
@@ -46,11 +118,13 @@ public actor EventSource: NSObject {
 
     public func start() async {
         guard self.readyState == .raw else {
-            Self.logger.info("start() called on already-started EventSource object. Returning")
+            Self.logger.warning("start() called on already-started EventSource object.")
             return
         }
         self.readyState = .connecting
-        self.urlSession = self.createSession()
+        if urlSession == nil {
+            self.urlSession = self.createSession(as: sessionType)
+        }
         await self.connect()
     }
 
@@ -58,11 +132,12 @@ public actor EventSource: NSObject {
         let previousState = self.readyState
         self.readyState = .shutdown
         self.sessionTask?.cancel()
+        self.sessionTask = nil
         if previousState == .open {
             await self.config.handler.onClosed()
         }
         self.urlSession?.invalidateAndCancel()
-        self.urlSession = nil
+        UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
     }
     
     func connect() async {
@@ -73,7 +148,7 @@ public actor EventSource: NSObject {
         sessionTask = task
     }
 
-    public func getLastEventId() async -> String? {
+    public func getLastEventId() async -> String {
         await eventParser.getLastEventId()
     }
 
@@ -85,9 +160,12 @@ public actor EventSource: NSObject {
         )
         urlRequest.httpMethod = self.config.method
         urlRequest.httpBody = self.config.body
-        if let lastEventId = await self.getLastEventId(), !lastEventId.isEmpty {
+        let lastEventId = await self.getLastEventId()
+        if !lastEventId.isEmpty {
             urlRequest.setValue(lastEventId, forHTTPHeaderField: "Last-Event-Id")
         }
+        urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        urlRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         urlRequest.allHTTPHeaderFields = self.config.headerTransform(
             urlRequest.allHTTPHeaderFields?.merging(self.config.headers) { $1 } ?? self.config.headers
         )
@@ -114,11 +192,11 @@ public actor EventSource: NSObject {
         /// Optional HTTP body to be included in the API request.
         public var body: Data?
         /// Additional HTTP headers to be set on the request
-        public var headers: [String: String] = [:]
+        public var headers: [String: String] =  [:]
         /// Transform function to allow dynamically configuring the headers on each API request.
         public var headerTransform: HeaderTransform = { $0 }
         /// An initial value for the last-event-id header to be sent on the initial request
-        public var lastEventId: String = ""
+        public var lastEventId: String
         
         /// The minimum amount of time to wait before reconnecting after a failure
         public var reconnectTime: TimeInterval = 1.0
@@ -145,22 +223,22 @@ public actor EventSource: NSObject {
         public var urlSessionConfiguration: URLSessionConfiguration {
             get {
                 // swiftlint:disable:next force_cast
-                let sessionConfig = _urlSessionConfiguration.copy() as! URLSessionConfiguration
-                sessionConfig.httpAdditionalHeaders = ["Accept": "text/event-stream", "Cache-Control": "no-cache"]
-                sessionConfig.timeoutIntervalForRequest = idleTimeout
+                let sessionConfig = _urlSessionConfiguration.copy() as? URLSessionConfiguration
+                sessionConfig?.httpAdditionalHeaders = ["Accept": "text/event-stream", "Cache-Control": "no-cache"]
+                sessionConfig?.timeoutIntervalForRequest = idleTimeout
 
                 #if !os(Linux) && !os(Windows)
                 if #available(iOS 13, macOS 10.15, tvOS 13, watchOS 6, *) {
-                    sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv12
+                    sessionConfig?.tlsMinimumSupportedProtocolVersion = .TLSv12
                 } else {
-                    sessionConfig.tlsMinimumSupportedProtocol = .tlsProtocol12
+                    sessionConfig?.tlsMinimumSupportedProtocol = .tlsProtocol12
                 }
                 #endif
-                return sessionConfig
+                return sessionConfig ?? .default
             }
             set {
                 // swiftlint:disable:next force_cast
-                _urlSessionConfiguration = newValue.copy() as! URLSessionConfiguration
+                _urlSessionConfiguration = newValue.copy() as? URLSessionConfiguration ?? .default
             }
         }
 
@@ -182,10 +260,11 @@ public actor EventSource: NSObject {
         }
 
         /// Create a new configuration with an `EventHandler` and a `URL`
-        public init(handler: EventHandler, url: URL, lastEventId: String? = nil) {
+        public init(handler: EventHandler, url: URL, lastEventId: String? = nil, reconnectTime: TimeInterval = 1) {
             self.handler = handler
             self.url = url
             self.lastEventId = lastEventId ?? ""
+            self.reconnectTime = reconnectTime
         }
     }
 }

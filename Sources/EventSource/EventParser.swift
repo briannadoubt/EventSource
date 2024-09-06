@@ -35,7 +35,9 @@ actor EventParser {
         }
     }
 
-    func getLastEventId() -> String { lastEventId }
+    func getLastEventId() -> String {
+        lastEventId
+    }
 
     func reset() -> TimeInterval {
         data = ""
@@ -80,9 +82,10 @@ actor EventParser {
 
     private func dispatchEvent() async {
         lastEventId = lastEventIdBuffer ?? lastEventId
+        UserDefaults.eventSource.set(lastEventId, forKey: "com.briannadoubt.event-source.last-event-id")
+        UserDefaults.eventSource.synchronize()
         lastEventIdBuffer = nil
-        guard !data.isEmpty
-        else {
+        guard !data.isEmpty else {
             eventType = ""
             return
         }
@@ -98,7 +101,7 @@ actor EventParser {
     }
 }
 
-private extension Array {
+extension Array {
     /// Returns the element at the specified index if it is within bounds, otherwise nil.
     subscript (safe index: Index) -> Element? {
         index >= startIndex && index < endIndex ? self[index] : nil

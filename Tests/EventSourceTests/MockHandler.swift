@@ -30,37 +30,25 @@ enum ReceivedEvent: Equatable, Sendable {
 }
 
 actor MockHandler: EventHandler, Sendable {
-    var events = EventSink<ReceivedEvent>()
-    
-    func expectEvent(maxWait: TimeInterval = 1.0) -> ReceivedEvent? {
-        events.expectEvent(maxWait: maxWait)
-    }
-    
-    func maybeEvent() -> ReceivedEvent? {
-        events.maybeEvent()
-    }
-
-    func expectNoEvent(within: TimeInterval = 0.1) {
-        events.expectNoEvent(within: within)
-    }
+    var events: [ReceivedEvent] = []
     
     func onOpened() async {
-        events.record(.opened)
+        events.append(.opened)
     }
     
     func onClosed() async {
-        events.record(.closed)
+        events.append(.closed)
     }
     
     func onMessage(eventType: String, messageEvent: MessageEvent) async {
-        events.record(.message(eventType, messageEvent))
+        events.append(.message(eventType, messageEvent))
     }
     
     func onComment(comment: String) async {
-        events.record(.comment(comment))
+        events.append(.comment(comment))
     }
     
     func onError(error: Error) async {
-        events.record(.error(error))
+        events.append(.error(error))
     }
 }
