@@ -1,5 +1,7 @@
 # EventSource
 
+[![Swift](https://github.com/briannadoubt/EventSource/actions/workflows/run-tests.yaml/badge.svg)](https://github.com/briannadoubt/EventSource/actions/workflows/run-tests.yaml)
+
 A pure Swift implementation of the [EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) object for consuming SSE (Server Sent Events) from a server.
 
 # What is EventSource? SSE?
