@@ -83,7 +83,6 @@ final class EventSourceDelegate: NSObject, URLSessionDataDelegate {
     
     func handleInitialReply(response: URLResponse) async -> URLSession.ResponseDisposition {
         Self.logger.debug("Initial reply received")
-        // swiftlint:disable:next force_cast
         let httpResponse = response as? HTTPURLResponse
         let statusCode = httpResponse?.statusCode ?? 500
         if (200..<300).contains(statusCode) && statusCode != 204 {

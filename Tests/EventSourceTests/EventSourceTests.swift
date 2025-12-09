@@ -71,7 +71,6 @@ struct EventSourceTests {
         #expect(config.headerTransform(["abc": "123"]) == ["abc": "123"])
         await #expect(config.connectionErrorHandler(TestError()) == .proceed)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -107,7 +106,6 @@ struct EventSourceTests {
         #expect(config.idleTimeout == 180.0)
         await #expect(config.connectionErrorHandler(TestError()) == .shutdown)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -131,7 +129,6 @@ struct EventSourceTests {
         #expect(config.urlSessionConfiguration.allowsCellularAccess == false)
         #expect(sessionConfig !== config.urlSessionConfiguration)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -144,7 +141,6 @@ struct EventSourceTests {
         es = EventSource(config: config, sessionType: MockDataTaskSession.self)
         await #expect(es.getLastEventId() == "def")
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
     
     @Test
@@ -156,7 +152,6 @@ struct EventSourceTests {
         #expect(configuration.httpAdditionalHeaders?["Accept"] as? String == "text/event-stream")
         #expect(configuration.httpAdditionalHeaders?["Cache-Control"] as? String == "no-cache")
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -193,35 +188,36 @@ struct EventSourceTests {
         #expect(request.timeoutInterval == config.idleTimeout)
         #expect(request.allHTTPHeaderFields == overrideHeaders.merging(staticHeaders) { $1 })
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
-//    @Test
-//    func dispatchError() async {
-//        let mockHandler = MockHandler()
-//        
-//        var config = EventSource<MockDataTaskSession>.Config(handler: mockHandler, url: URL(string: "abc")!)
-//        
-////        var connectionErrorHandlerCallCount = 0
-//        config.connectionErrorHandler = { error in
-////            connectionErrorHandlerCallCount += 1
-//            return .proceed
-//        }
-//
-//        let es = EventSource(config: config, urlSession: MockDataTaskSession.self)
-//        await #expect(es.dispatchError(error: TestError()) == .proceed)
-////        #expect(connectionErrorHandlerCallCount == 1)
-//        guard
-//            case .error(let err) = await mockHandler.expectEvent(),
-//            err is TestError
-//        else {
-//            Issue.record("handler should receive error if EventSource is not shutting down")
-//            return
-//        }
-//        await mockHandler.events.expectNoEvent()
-//        await #expect(es.dispatchError(error: TestError()) == .shutdown)
-////        #expect(connectionErrorHandlerCallCount == 2)
-//    }
+    @Test
+    func dispatchError() async {
+        let mockHandler = MockHandler()
+
+        var config = EventSource.Config(handler: mockHandler, url: URL(string: "abc")!)
+
+        var connectionErrorHandlerCallCount = 0
+        config.connectionErrorHandler = { error in
+            connectionErrorHandlerCallCount += 1
+            // Return shutdown on second call to test both paths
+            return connectionErrorHandlerCallCount == 1 ? .proceed : .shutdown
+        }
+
+        let es = EventSource(config: config, sessionType: MockDataTaskSession.self)
+        await #expect(es.dispatchError(error: TestError()) == .proceed)
+        #expect(connectionErrorHandlerCallCount == 1)
+        guard
+            case .error(let err) = await mockHandler.events.first,
+            err is TestError
+        else {
+            Issue.record("handler should receive error if EventSource is not shutting down")
+            return
+        }
+        await #expect(es.dispatchError(error: TestError()) == .shutdown)
+        #expect(connectionErrorHandlerCallCount == 2)
+        // Error should not be dispatched to handler when shutdown is returned
+        await #expect(mockHandler.events.count == 1)
+    }
 
     #if !os(Linux) && !os(Windows)
     @Test
@@ -242,7 +238,6 @@ struct EventSourceTests {
         #expect(session?.lastRequest?.allHTTPHeaderFields?["Last-Event-Id"] == nil)
         await es.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -268,7 +263,6 @@ struct EventSourceTests {
         #expect(session?.lastRequest?.allHTTPHeaderFields?["X-LD-Header"] == "def")
         await es.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -287,7 +281,6 @@ struct EventSourceTests {
         #expect(session?.requests.count == 1)
         await es.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -303,7 +296,6 @@ struct EventSourceTests {
         await #expect(mockHandler.events.first == .opened)
         await eventSource.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -343,7 +335,6 @@ struct EventSourceTests {
         await #expect((eventSource.urlSession as? MockDataTaskSession)?.requests.last?.allHTTPHeaderFields?["Last-Event-Id"] == "abc")
         await eventSource.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -374,7 +365,6 @@ struct EventSourceTests {
         await #expect(mockHandler.events[safe: 2] == .opened)
         await eventSource.stop()
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
     
     @Test
@@ -397,7 +387,6 @@ struct EventSourceTests {
         await eventSource.stop()
         await #expect(mockHandler.events[safe: 2] == .closed)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -419,7 +408,6 @@ struct EventSourceTests {
             await eventSource.stop()
         }
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -440,7 +428,6 @@ struct EventSourceTests {
         // Error should not have been given to the handler
         await #expect(mockHandler.events.isEmpty)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -463,7 +450,6 @@ struct EventSourceTests {
         // Error should not have been given to the handler
         await #expect(mockHandler.events.count == 2)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
 
     @Test
@@ -479,7 +465,6 @@ struct EventSourceTests {
         // Error should not have been given to the handler
         await #expect(mockHandler.events.isEmpty)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
     
     @Test
@@ -500,7 +485,6 @@ struct EventSourceTests {
         // Error should not have been given to the handler
         await #expect(mockHandler.events.isEmpty)
         UserDefaults.eventSource.removeObject(forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
     }
     #endif
 }
