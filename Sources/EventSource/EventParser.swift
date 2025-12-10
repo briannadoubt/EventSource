@@ -83,7 +83,6 @@ actor EventParser {
     private func dispatchEvent() async {
         lastEventId = lastEventIdBuffer ?? lastEventId
         UserDefaults.eventSource.set(lastEventId, forKey: "com.briannadoubt.event-source.last-event-id")
-        UserDefaults.eventSource.synchronize()
         lastEventIdBuffer = nil
         guard !data.isEmpty else {
             eventType = ""

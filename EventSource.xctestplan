@@ -13,9 +13,6 @@
   },
   "testTargets" : [
     {
-      "skippedTests" : [
-        "EventSourceTests\/dispatchError()"
-      ],
       "target" : {
         "containerPath" : "container:",
         "identifier" : "EventSourceTests",

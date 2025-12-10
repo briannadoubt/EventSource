@@ -222,7 +222,6 @@ public actor EventSource: NSObject {
          */
         public var urlSessionConfiguration: URLSessionConfiguration {
             get {
-                // swiftlint:disable:next force_cast
                 let sessionConfig = _urlSessionConfiguration.copy() as? URLSessionConfiguration
                 sessionConfig?.httpAdditionalHeaders = ["Accept": "text/event-stream", "Cache-Control": "no-cache"]
                 sessionConfig?.timeoutIntervalForRequest = idleTimeout
@@ -237,7 +236,6 @@ public actor EventSource: NSObject {
                 return sessionConfig ?? .default
             }
             set {
-                // swiftlint:disable:next force_cast
                 _urlSessionConfiguration = newValue.copy() as? URLSessionConfiguration ?? .default
             }
         }
