@@ -196,16 +196,16 @@ struct EventSourceTests {
 
         var config = EventSource.Config(handler: mockHandler, url: URL(string: "abc")!)
 
-        var connectionErrorHandlerCallCount = 0
+        let connectionErrorHandlerCallCount = LockIsolated(0)
         config.connectionErrorHandler = { error in
-            connectionErrorHandlerCallCount += 1
+            connectionErrorHandlerCallCount.withValue { $0 += 1 }
             // Return shutdown on second call to test both paths
-            return connectionErrorHandlerCallCount == 1 ? .proceed : .shutdown
+            return connectionErrorHandlerCallCount.value == 1 ? .proceed : .shutdown
         }
 
         let es = EventSource(config: config, sessionType: MockDataTaskSession.self)
         await #expect(es.dispatchError(error: TestError()) == .proceed)
-        #expect(connectionErrorHandlerCallCount == 1)
+        #expect(connectionErrorHandlerCallCount.value == 1)
         guard
             case .error(let err) = await mockHandler.events.first,
             err is TestError
@@ -214,7 +214,7 @@ struct EventSourceTests {
             return
         }
         await #expect(es.dispatchError(error: TestError()) == .shutdown)
-        #expect(connectionErrorHandlerCallCount == 2)
+        #expect(connectionErrorHandlerCallCount.value == 2)
         // Error should not be dispatched to handler when shutdown is returned
         await #expect(mockHandler.events.count == 1)
     }
